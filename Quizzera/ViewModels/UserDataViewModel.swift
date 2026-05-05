@@ -3,11 +3,48 @@
 //  Quizzera
 //
 //  Created on 2026-04-27.
-//  Persistence layer — UserDefaults for user data, leaderboard, XP.
+//  Persistence layer — UserDefaults for user data, leaderboard, XP, streaks, score history.
 //
 
 import SwiftUI
 import Combine
+
+// MARK: - Score History Entry
+
+/// Lightweight record of a completed quiz for the score history chart.
+struct ScoreHistoryEntry: Codable, Identifiable {
+    let id: UUID
+    let date: Date
+    let score: Int
+    let maxScore: Int
+    let category: Category
+    let correctCount: Int
+    let totalQuestions: Int
+
+    init(
+        id: UUID = UUID(),
+        date: Date = Date(),
+        score: Int,
+        maxScore: Int,
+        category: Category,
+        correctCount: Int,
+        totalQuestions: Int
+    ) {
+        self.id = id
+        self.date = date
+        self.score = score
+        self.maxScore = maxScore
+        self.category = category
+        self.correctCount = correctCount
+        self.totalQuestions = totalQuestions
+    }
+
+    /// Score as a percentage (0.0–1.0) for the sparkline chart.
+    var scoreFraction: Double {
+        guard maxScore > 0 else { return 0 }
+        return Double(score) / Double(maxScore)
+    }
+}
 
 /// Manages all persisted user data via UserDefaults.
 @MainActor
@@ -25,6 +62,9 @@ final class UserDataViewModel: ObservableObject {
         static let leaderboard      = "quizzera_leaderboard"
         static let categoryXP       = "quizzera_categoryXP"
         static let currentSessionId = "quizzera_currentSessionId"
+        static let dailyStreak      = "quizzera_dailyStreak"
+        static let lastPlayDate     = "quizzera_lastPlayDate"
+        static let scoreHistory     = "quizzera_scoreHistory"
     }
 
     // MARK: - Published State
@@ -68,6 +108,23 @@ final class UserDataViewModel: ObservableObject {
     /// ID of the most recently completed quiz (for highlighting in leaderboard).
     @Published var currentSessionId: UUID? = nil
 
+    /// Number of consecutive days the user has played.
+    @Published var dailyStreak: Int {
+        didSet { UserDefaults.standard.set(dailyStreak, forKey: Keys.dailyStreak) }
+    }
+
+    /// Date the user last completed a quiz.
+    @Published var lastPlayDate: Date? {
+        didSet {
+            if let date = lastPlayDate {
+                UserDefaults.standard.set(date.timeIntervalSince1970, forKey: Keys.lastPlayDate)
+            }
+        }
+    }
+
+    /// Score history for the sparkline chart (last 10 entries).
+    @Published var scoreHistory: [ScoreHistoryEntry] = []
+
     // MARK: - Computed
 
     /// Overall accuracy percentage across all quizzes.
@@ -92,6 +149,15 @@ final class UserDataViewModel: ObservableObject {
         self.totalQuizzes  = defaults.integer(forKey: Keys.totalQuizzes)
         self.totalCorrect  = defaults.integer(forKey: Keys.totalCorrect)
         self.totalAnswered = defaults.integer(forKey: Keys.totalAnswered)
+        self.dailyStreak   = defaults.integer(forKey: Keys.dailyStreak)
+
+        // Load last play date
+        let lastPlayTimestamp = defaults.double(forKey: Keys.lastPlayDate)
+        if lastPlayTimestamp > 0 {
+            self.lastPlayDate = Date(timeIntervalSince1970: lastPlayTimestamp)
+        } else {
+            self.lastPlayDate = nil
+        }
 
         // Load leaderboard
         if let data = defaults.data(forKey: Keys.leaderboard),
@@ -109,6 +175,12 @@ final class UserDataViewModel: ObservableObject {
                 }
             }
             self.categoryXPData = xpMap
+        }
+
+        // Load score history
+        if let data = defaults.data(forKey: Keys.scoreHistory),
+           let decoded = try? JSONDecoder().decode([ScoreHistoryEntry].self, from: data) {
+            self.scoreHistory = decoded
         }
 
         // Ensure all categories have an entry
@@ -160,6 +232,68 @@ final class UserDataViewModel: ObservableObject {
         // Update category XP
         let xpGained = calculateXP(for: result)
         addXP(xpGained, to: result.category)
+
+        // Update daily streak
+        updateDailyStreak()
+
+        // Record score history
+        addScoreHistoryEntry(for: result)
+    }
+
+    // MARK: - Daily Streak
+
+    /// Update the daily play streak based on last play date.
+    private func updateDailyStreak() {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+
+        if let lastDate = lastPlayDate {
+            let lastDay = calendar.startOfDay(for: lastDate)
+
+            if calendar.isDate(lastDay, inSameDayAs: today) {
+                // Already played today — no change
+            } else if let yesterday = calendar.date(byAdding: .day, value: -1, to: today),
+                      calendar.isDate(lastDay, inSameDayAs: yesterday) {
+                // Played yesterday — increment streak
+                dailyStreak += 1
+            } else {
+                // Missed a day — reset streak
+                dailyStreak = 1
+            }
+        } else {
+            // First time playing
+            dailyStreak = 1
+        }
+
+        lastPlayDate = Date()
+    }
+
+    // MARK: - Score History
+
+    /// Add a score history entry and persist (keep last 10).
+    private func addScoreHistoryEntry(for result: QuizResult) {
+        let entry = ScoreHistoryEntry(
+            score: result.totalScore,
+            maxScore: result.maxPossibleScore,
+            category: result.category,
+            correctCount: result.correctCount,
+            totalQuestions: result.totalQuestions
+        )
+        scoreHistory.append(entry)
+
+        // Keep only the last 10 entries
+        if scoreHistory.count > 10 {
+            scoreHistory = Array(scoreHistory.suffix(10))
+        }
+
+        saveScoreHistory()
+    }
+
+    /// Save score history to UserDefaults.
+    private func saveScoreHistory() {
+        if let data = try? JSONEncoder().encode(scoreHistory) {
+            UserDefaults.standard.set(data, forKey: Keys.scoreHistory)
+        }
     }
 
     // MARK: - Leaderboard Persistence
@@ -222,7 +356,8 @@ final class UserDataViewModel: ObservableObject {
         let defaults = UserDefaults.standard
         for key in [Keys.playerName, Keys.hasLaunched, Keys.bestScore,
                     Keys.totalQuizzes, Keys.totalCorrect, Keys.totalAnswered,
-                    Keys.leaderboard, Keys.categoryXP] {
+                    Keys.leaderboard, Keys.categoryXP, Keys.dailyStreak,
+                    Keys.lastPlayDate, Keys.scoreHistory] {
             defaults.removeObject(forKey: key)
         }
 
@@ -234,6 +369,9 @@ final class UserDataViewModel: ObservableObject {
         totalAnswered = 0
         leaderboard = []
         currentSessionId = nil
+        dailyStreak = 0
+        lastPlayDate = nil
+        scoreHistory = []
 
         categoryXPData = [:]
         for cat in Category.allCases {

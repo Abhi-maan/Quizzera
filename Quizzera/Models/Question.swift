@@ -15,6 +15,7 @@ struct Question: Identifiable, Codable {
     let correctIndex: Int
     let category: Category
     let difficulty: Difficulty
+    let explanation: String?
 
     init(
         id: UUID = UUID(),
@@ -22,7 +23,8 @@ struct Question: Identifiable, Codable {
         options: [String],
         correctIndex: Int,
         category: Category,
-        difficulty: Difficulty
+        difficulty: Difficulty,
+        explanation: String? = nil
     ) {
         self.id = id
         self.text = text
@@ -30,6 +32,7 @@ struct Question: Identifiable, Codable {
         self.correctIndex = correctIndex
         self.category = category
         self.difficulty = difficulty
+        self.explanation = explanation
     }
 
     /// Returns the correct answer string.
@@ -72,10 +75,12 @@ enum Category: String, Codable, CaseIterable, Identifiable {
 }
 
 /// Question difficulty levels.
-enum Difficulty: String, Codable, CaseIterable {
+enum Difficulty: String, Codable, CaseIterable, Identifiable {
     case easy   = "Easy"
     case medium = "Medium"
     case hard   = "Hard"
+
+    var id: String { rawValue }
 
     /// Point multiplier based on difficulty.
     var multiplier: Double {

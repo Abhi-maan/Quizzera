@@ -9,9 +9,10 @@
 import Foundation
 
 /// Central question bank for all quiz categories.
+/// Used as the **offline fallback** when the OpenTDB API is unavailable.
 struct QuizData {
 
-    /// Returns 10 shuffled questions for the given category.
+    /// Returns 10 shuffled questions for the given category (all difficulties).
     static func questions(for category: Category) -> [Question] {
         let pool: [Question]
         switch category {
@@ -21,6 +22,25 @@ struct QuizData {
         case .sports:           pool = sportsQuestions
         }
         return Array(pool.shuffled().prefix(10))
+    }
+
+    /// Returns up to 10 shuffled questions filtered by category AND difficulty.
+    /// Falls back to all difficulties if not enough questions match.
+    static func questions(for category: Category, difficulty: Difficulty) -> [Question] {
+        let pool: [Question]
+        switch category {
+        case .generalKnowledge: pool = generalKnowledgeQuestions
+        case .technology:       pool = technologyQuestions
+        case .science:          pool = scienceQuestions
+        case .sports:           pool = sportsQuestions
+        }
+        let filtered = pool.filter { $0.difficulty == difficulty }
+        // If fewer than 5 match the difficulty, mix in other difficulties
+        if filtered.count >= 5 {
+            return Array(filtered.shuffled().prefix(10))
+        } else {
+            return Array(pool.shuffled().prefix(10))
+        }
     }
 
     // MARK: - General Knowledge (10)

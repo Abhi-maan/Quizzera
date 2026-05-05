@@ -3,7 +3,7 @@
 //  Quizzera
 //
 //  Created on 2026-04-27.
-//  Core gameplay — timer, question cards, answers, confidence, streak, skip.
+//  Core gameplay — timer, question cards, answers, confidence, streak, skip, loading, source badge.
 //
 
 import SwiftUI
@@ -16,12 +16,16 @@ struct QuizScreenView: View {
 
     @State private var questionTransitionId = UUID()
     @State private var showResult = false
+    @State private var loadingPulse = false
 
     var body: some View {
         ZStack {
             Color.quizzeraBg.ignoresSafeArea()
 
-            if viewModel.quizFinished {
+            if viewModel.isLoadingQuestions {
+                // Loading overlay while fetching API questions
+                loadingOverlay
+            } else if viewModel.quizFinished {
                 // Navigate to result
                 Color.clear
                     .onAppear {
@@ -96,7 +100,59 @@ struct QuizScreenView: View {
         .onChange(of: showResult) { _, newValue in
             // When Result screen is dismissed (Play Again tapped), restart the same quiz
             if !newValue && viewModel.quizFinished {
-                viewModel.startQuiz(category: viewModel.category)
+                viewModel.startQuiz(category: viewModel.category, difficulty: viewModel.selectedDifficulty)
+            }
+        }
+    }
+
+    // MARK: - Loading Overlay
+
+    private var loadingOverlay: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            ZStack {
+                // Pulsing glow
+                Circle()
+                    .fill(Color.electricPurple.opacity(0.15))
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(loadingPulse ? 1.2 : 0.8)
+
+                // Brain icon
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 50, weight: .medium))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.electricPurple, .neonGreen],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .scaleEffect(loadingPulse ? 1.05 : 0.95)
+            }
+
+            VStack(spacing: 8) {
+                Text("Fetching Questions...")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+
+                Text("Connecting to Open Trivia Database")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            // Loading dots
+            HStack(spacing: 6) {
+                ForEach(0..<3) { i in
+                    LoadingDot(delay: Double(i) * 0.2)
+                }
+            }
+
+            Spacer()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                loadingPulse = true
             }
         }
     }
@@ -117,6 +173,32 @@ struct QuizScreenView: View {
             .buttonStyle(.bounce)
 
             Spacer()
+
+            // Question source badge
+            HStack(spacing: 4) {
+                Text(viewModel.questionSource.emoji)
+                    .font(.system(size: 11))
+                Text(viewModel.questionSource.rawValue)
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .foregroundColor(viewModel.questionSource == .api ? .neonGreen : .orange)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                Capsule()
+                    .fill(
+                        (viewModel.questionSource == .api ? Color.neonGreen : Color.orange)
+                            .opacity(0.1)
+                    )
+                    .overlay(
+                        Capsule()
+                            .stroke(
+                                (viewModel.questionSource == .api ? Color.neonGreen : Color.orange)
+                                    .opacity(0.2),
+                                lineWidth: 1
+                            )
+                    )
+            )
 
             // Question counter
             Text(viewModel.questionCounterText)

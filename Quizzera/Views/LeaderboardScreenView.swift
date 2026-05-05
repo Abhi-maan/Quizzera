@@ -3,7 +3,7 @@
 //  Quizzera
 //
 //  Created on 2026-04-27.
-//  Top 5 leaderboard with rank medals, current session highlight.
+//  My Best Scores — top 5 personal scores with rank medals, current session highlight.
 //
 
 import SwiftUI
@@ -105,11 +105,11 @@ struct LeaderboardScreenView: View {
             Spacer()
 
             VStack(spacing: 2) {
-                Text("Leaderboard")
+                Text("My Best Scores")
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
 
-                Text("Top 5 Scores")
+                Text("Your Top Performances")
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.4))
             }
@@ -186,7 +186,7 @@ struct LeaderboardScreenView: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundColor(.white.opacity(0.7))
 
-                Text("Complete a quiz to see your\nname on the leaderboard!")
+                Text("Complete a quiz to see your\nscores on the board!")
                     .font(.system(size: 15, weight: .medium, design: .rounded))
                     .foregroundColor(.white.opacity(0.4))
                     .multilineTextAlignment(.center)

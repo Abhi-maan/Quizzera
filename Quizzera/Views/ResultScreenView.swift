@@ -3,7 +3,7 @@
 //  Quizzera
 //
 //  Created on 2026-04-27.
-//  Results — animated score, badge, breakdown, confidence insights, review.
+//  Results — animated score, badge, breakdown, confidence insights, review, share.
 //
 
 import SwiftUI
@@ -23,6 +23,8 @@ struct ResultScreenView: View {
     @State private var showReview = false
     @State private var confettiActive = false
     @State private var navigateHome = false
+    @State private var showShareSheet = false
+    @State private var shareImage: UIImage? = nil
 
     var body: some View {
         ZStack {
@@ -76,6 +78,11 @@ struct ResultScreenView: View {
         .navigationDestination(isPresented: $navigateHome) {
             HomeScreenView()
                 .environmentObject(userData)
+        }
+        .sheet(isPresented: $showShareSheet) {
+            if let image = shareImage {
+                ShareSheetView(image: image)
+            }
         }
         .onAppear {
             userData.recordResult(result)
@@ -297,34 +304,65 @@ struct ResultScreenView: View {
 
     private var actionButtons: some View {
         VStack(spacing: 14) {
-            // Review Answers
-            Button {
-                showReview = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "list.bullet.clipboard")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text("Review Answers")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
+            // Share Results + Review side by side
+            HStack(spacing: 12) {
+                // Share Results Card
+                Button {
+                    shareImage = ShareCardView.renderAsImage(result: result)
+                    showShareSheet = true
+                    HapticManager.impact(.medium)
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Share")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.neonGreen)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.neonGreen.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.neonGreen.opacity(0.3), lineWidth: 1.5)
+                            )
+                    )
                 }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 16)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.cardBg)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(Color.electricPurple.opacity(0.4), lineWidth: 1.5)
-                        )
-                )
+                .buttonStyle(.bounce)
+
+                // Review Answers
+                Button {
+                    showReview = true
+                    HapticManager.selection()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "list.bullet.clipboard")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("Review")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.cardBg)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Color.electricPurple.opacity(0.4), lineWidth: 1.5)
+                            )
+                    )
+                }
+                .buttonStyle(.bounce)
             }
-            .buttonStyle(.bounce)
 
             HStack(spacing: 14) {
                 // Play Again
                 Button {
                     dismiss()
+                    HapticManager.impact(.medium)
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.counterclockwise")
@@ -349,6 +387,7 @@ struct ResultScreenView: View {
                 // Home
                 Button {
                     navigateHome = true
+                    HapticManager.selection()
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "house.fill")
@@ -411,9 +450,24 @@ struct ResultScreenView: View {
         if result.performanceBadge.showConfetti {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
                 withAnimation { confettiActive = true }
+                HapticManager.notification(.success)
             }
         }
     }
+}
+
+// MARK: - Share Sheet (UIKit Bridge)
+
+struct ShareSheetView: UIViewControllerRepresentable {
+    let image: UIImage
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let items: [Any] = [image, "I scored on Quizzera! 🧠🔥 Can you beat me?" as String]
+        let activityVC = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        return activityVC
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Breakdown Card

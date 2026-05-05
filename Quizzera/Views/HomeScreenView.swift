@@ -3,7 +3,7 @@
 //  Quizzera
 //
 //  Created on 2026-04-27.
-//  Home hub — stats, category picker, XP badges, navigation.
+//  Home hub — stats, category picker, difficulty selector, XP badges, streak, sparkline, navigation.
 //
 
 import SwiftUI
@@ -14,6 +14,7 @@ struct HomeScreenView: View {
     @StateObject private var quizVM = QuizViewModel()
 
     @State private var selectedCategory: Category = .generalKnowledge
+    @State private var selectedDifficulty: Difficulty = .medium
     @State private var showNameEntry = false
     @State private var nameInput = ""
     @State private var navigateToQuiz = false
@@ -42,8 +43,20 @@ struct HomeScreenView: View {
                         .opacity(statsVisible ? 1 : 0)
                         .offset(y: statsVisible ? 0 : 20)
 
+                    // MARK: - Score History Sparkline
+                    if !userData.scoreHistory.isEmpty {
+                        sparklineSection
+                            .opacity(statsVisible ? 1 : 0)
+                            .offset(y: statsVisible ? 0 : 20)
+                    }
+
                     // MARK: - Category Picker
                     categorySection
+                        .opacity(categoryVisible ? 1 : 0)
+                        .offset(y: categoryVisible ? 0 : 20)
+
+                    // MARK: - Difficulty Picker
+                    difficultySection
                         .opacity(categoryVisible ? 1 : 0)
                         .offset(y: categoryVisible ? 0 : 20)
 
@@ -109,6 +122,28 @@ struct HomeScreenView: View {
 
                 Spacer()
 
+                // Daily streak badge
+                if userData.dailyStreak >= 1 {
+                    HStack(spacing: 5) {
+                        Text("🔥")
+                            .font(.system(size: 16))
+                        Text("\(userData.dailyStreak)")
+                            .font(.system(size: 16, weight: .bold, design: .rounded))
+                            .foregroundColor(.orange)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color.orange.opacity(0.12))
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.orange.opacity(0.25), lineWidth: 1)
+                            )
+                    )
+                    .transition(.scale.combined(with: .opacity))
+                }
+
                 // Profile icon
                 ZStack {
                     Circle()
@@ -158,6 +193,39 @@ struct HomeScreenView: View {
         }
     }
 
+    // MARK: - Sparkline Section
+
+    private var sparklineSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "chart.xyaxis.line")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.electricPurple)
+                Text("Score Trend")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.8))
+
+                Spacer()
+
+                Text("Last \(userData.scoreHistory.count) quizzes")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.35))
+            }
+
+            SparklineChart(entries: userData.scoreHistory)
+                .frame(height: 60)
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.cardBg)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.electricPurple.opacity(0.1), lineWidth: 1)
+                )
+        )
+    }
+
     // MARK: - Category Section
 
     private var categorySection: some View {
@@ -180,6 +248,32 @@ struct HomeScreenView: View {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                             selectedCategory = category
                         }
+                        HapticManager.selection()
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Difficulty Section
+
+    private var difficultySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Difficulty")
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .foregroundColor(.white.opacity(0.9))
+
+            HStack(spacing: 10) {
+                ForEach(Difficulty.allCases) { difficulty in
+                    DifficultyPill(
+                        difficulty: difficulty,
+                        isSelected: selectedDifficulty == difficulty
+                    )
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            selectedDifficulty = difficulty
+                        }
+                        HapticManager.selection()
                     }
                 }
             }
@@ -263,8 +357,9 @@ struct HomeScreenView: View {
         VStack(spacing: 14) {
             // Start Quiz button
             Button {
-                quizVM.startQuiz(category: selectedCategory)
+                quizVM.startQuiz(category: selectedCategory, difficulty: selectedDifficulty)
                 navigateToQuiz = true
+                HapticManager.impact(.medium)
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "play.fill")
@@ -287,14 +382,15 @@ struct HomeScreenView: View {
             }
             .buttonStyle(GlowButtonStyle())
 
-            // Leaderboard button
+            // My Best Scores button
             Button {
                 navigateToLeaderboard = true
+                HapticManager.selection()
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "crown.fill")
                         .font(.system(size: 16, weight: .bold))
-                    Text("Leaderboard")
+                    Text("My Best Scores")
                         .font(.system(size: 18, weight: .bold, design: .rounded))
                 }
                 .foregroundColor(.white.opacity(0.9))
@@ -371,6 +467,7 @@ struct HomeScreenView: View {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         showNameEntry = false
                     }
+                    HapticManager.notification(.success)
                 } label: {
                     Text("Let's Go!")
                         .font(.system(size: 17, weight: .bold, design: .rounded))
@@ -518,6 +615,152 @@ struct CategoryCard: View {
                 )
         )
         .shadow(color: isSelected ? .electricPurple.opacity(0.2) : .clear, radius: 8)
+    }
+}
+
+// MARK: - Difficulty Pill
+
+struct DifficultyPill: View {
+    let difficulty: Difficulty
+    let isSelected: Bool
+
+    private var difficultyColor: Color {
+        switch difficulty {
+        case .easy:   return .neonGreen
+        case .medium: return .quizzeraGold
+        case .hard:   return .dangerRed
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: difficulty.iconName)
+                .font(.system(size: 12, weight: .semibold))
+
+            Text(difficulty.rawValue)
+                .font(.system(size: 14, weight: .semibold, design: .rounded))
+        }
+        .foregroundColor(isSelected ? .white : difficultyColor.opacity(0.7))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isSelected ? difficultyColor.opacity(0.25) : Color.cardBg)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(
+                            isSelected ? difficultyColor.opacity(0.6) : Color.white.opacity(0.06),
+                            lineWidth: isSelected ? 1.5 : 1
+                        )
+                )
+        )
+        .shadow(color: isSelected ? difficultyColor.opacity(0.2) : .clear, radius: 6)
+    }
+}
+
+// MARK: - Sparkline Chart
+
+struct SparklineChart: View {
+    let entries: [ScoreHistoryEntry]
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let height = geo.size.height
+            let maxScore = entries.map(\.score).max() ?? 1
+            let minScore = entries.map(\.score).min() ?? 0
+            let scoreRange = max(Double(maxScore - minScore), 1)
+
+            ZStack {
+                // Grid lines
+                ForEach(0..<3) { i in
+                    let y = height * CGFloat(i) / 2.0
+                    Path { path in
+                        path.move(to: CGPoint(x: 0, y: y))
+                        path.addLine(to: CGPoint(x: width, y: y))
+                    }
+                    .stroke(Color.white.opacity(0.04), lineWidth: 1)
+                }
+
+                // Gradient fill under the line
+                if entries.count >= 2 {
+                    Path { path in
+                        let points = chartPoints(width: width, height: height, maxScore: maxScore, minScore: minScore, scoreRange: scoreRange)
+                        guard let first = points.first else { return }
+                        path.move(to: CGPoint(x: first.x, y: height))
+                        path.addLine(to: first)
+                        for point in points.dropFirst() {
+                            path.addLine(to: point)
+                        }
+                        if let last = points.last {
+                            path.addLine(to: CGPoint(x: last.x, y: height))
+                        }
+                        path.closeSubpath()
+                    }
+                    .fill(
+                        LinearGradient(
+                            colors: [.electricPurple.opacity(0.2), .neonGreen.opacity(0.05), .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+
+                    // Line
+                    Path { path in
+                        let points = chartPoints(width: width, height: height, maxScore: maxScore, minScore: minScore, scoreRange: scoreRange)
+                        guard let first = points.first else { return }
+                        path.move(to: first)
+                        for point in points.dropFirst() {
+                            path.addLine(to: point)
+                        }
+                    }
+                    .stroke(
+                        LinearGradient(
+                            colors: [.electricPurple, .neonGreen],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                    )
+
+                    // Data points
+                    ForEach(Array(chartPoints(width: width, height: height, maxScore: maxScore, minScore: minScore, scoreRange: scoreRange).enumerated()), id: \.offset) { _, point in
+                        Circle()
+                            .fill(Color.neonGreen)
+                            .frame(width: 6, height: 6)
+                            .shadow(color: .neonGreen.opacity(0.5), radius: 4)
+                            .position(point)
+                    }
+                }
+
+                // Score labels
+                if let last = entries.last {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Text("\(last.score) pts")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(.neonGreen)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
+    private func chartPoints(width: CGFloat, height: CGFloat, maxScore: Int, minScore: Int, scoreRange: Double) -> [CGPoint] {
+        guard entries.count >= 2 else { return [] }
+        let padding: CGFloat = 8
+        let usableWidth = width - padding * 2
+        let usableHeight = height - padding * 2
+
+        return entries.enumerated().map { index, entry in
+            let x = padding + usableWidth * CGFloat(index) / CGFloat(entries.count - 1)
+            let normalized = (Double(entry.score) - Double(minScore)) / scoreRange
+            let y = padding + usableHeight * (1.0 - normalized)
+            return CGPoint(x: x, y: y)
+        }
     }
 }
 

@@ -89,3 +89,26 @@ struct GlowButtonStyle: ButtonStyle {
 extension ButtonStyle where Self == BounceButtonStyle {
     static var bounce: BounceButtonStyle { BounceButtonStyle() }
 }
+
+// MARK: - Haptic Feedback Manager
+
+/// Centralized haptic feedback utility used throughout the app.
+enum HapticManager {
+    /// Trigger a notification haptic (success, warning, error).
+    static func notification(_ type: UINotificationFeedbackGenerator.FeedbackType) {
+        let generator = UINotificationFeedbackGenerator()
+        generator.notificationOccurred(type)
+    }
+
+    /// Trigger an impact haptic (light, medium, heavy, soft, rigid).
+    static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
+        let generator = UIImpactFeedbackGenerator(style: style)
+        generator.impactOccurred()
+    }
+
+    /// Trigger a selection haptic (subtle tick).
+    static func selection() {
+        let generator = UISelectionFeedbackGenerator()
+        generator.selectionChanged()
+    }
+}

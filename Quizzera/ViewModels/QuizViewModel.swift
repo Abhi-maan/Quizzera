@@ -3,7 +3,7 @@
 //  Quizzera
 //
 //  Created on 2026-04-27.
-//  Core game logic — timer, scoring, streaks, confidence, skip.
+//  Core game logic — timer, scoring, streaks, confidence, skip, API integration.
 //
 
 import SwiftUI
@@ -63,6 +63,15 @@ final class QuizViewModel: ObservableObject {
     /// The selected category for this quiz.
     @Published var category: Category = .generalKnowledge
 
+    /// Whether questions are currently being fetched from the API.
+    @Published var isLoadingQuestions: Bool = false
+
+    /// Where the current questions came from (API or local fallback).
+    @Published var questionSource: QuestionSource = .offline
+
+    /// The selected difficulty for this quiz.
+    @Published var selectedDifficulty: Difficulty = .medium
+
     // MARK: - Scoring Counters
 
     @Published var correctCount: Int = 0
@@ -82,6 +91,7 @@ final class QuizViewModel: ObservableObject {
 
     private var timerCancellable: AnyCancellable?
     private var questionStartTime: Date = Date()
+    private var dangerHapticCancellable: AnyCancellable?
 
     // MARK: - Computed Properties
 
@@ -136,12 +146,13 @@ final class QuizViewModel: ObservableObject {
         case transitioning    // Brief pause before next question
     }
 
-    // MARK: - Start Quiz
+    // MARK: - Start Quiz (Async with API Fallback)
 
-    /// Initialize and start a new quiz session for the given category.
-    func startQuiz(category: Category) {
+    /// Initialize and start a new quiz session for the given category and difficulty.
+    /// First attempts to fetch from OpenTDB API, falls back to local data on failure.
+    func startQuiz(category: Category, difficulty: Difficulty = .medium) {
         self.category = category
-        self.questions = QuizData.questions(for: category)
+        self.selectedDifficulty = difficulty
         self.currentIndex = 0
         self.totalScore = 0
         self.correctCount = 0
@@ -159,8 +170,34 @@ final class QuizViewModel: ObservableObject {
         self.answerRecords = []
         self.confidenceReport = ConfidenceReport()
         self.questionStartTime = Date()
+        self.isLoadingQuestions = true
+        self.questionSource = .offline
 
+        // Fetch questions asynchronously
+        Task {
+            await loadQuestions(category: category, difficulty: difficulty)
+        }
+    }
+
+    /// Attempt to load questions from the API, falling back to local data.
+    private func loadQuestions(category: Category, difficulty: Difficulty) async {
+        do {
+            let apiQuestions = try await TriviaAPIService.shared.fetchQuestions(
+                category: category,
+                difficulty: difficulty
+            )
+            self.questions = apiQuestions
+            self.questionSource = .api
+        } catch {
+            // Fallback to local questions filtered by difficulty
+            self.questions = QuizData.questions(for: category, difficulty: difficulty)
+            self.questionSource = .offline
+            print("⚠️ API fetch failed, using offline fallback: \(error.localizedDescription)")
+        }
+
+        self.isLoadingQuestions = false
         startTimer()
+        HapticManager.impact(.medium)
     }
 
     // MARK: - Timer
@@ -179,6 +216,15 @@ final class QuizViewModel: ObservableObject {
                 if self.timeRemaining > 0 {
                     self.timeRemaining -= 0.05
                     if self.timeRemaining < 0 { self.timeRemaining = 0 }
+
+                    // Haptic pulse in danger zone (once per second)
+                    if self.timerDanger {
+                        let rounded = Int(self.timeRemaining)
+                        let prevRounded = Int(self.timeRemaining + 0.05)
+                        if rounded != prevRounded && rounded > 0 {
+                            HapticManager.impact(.light)
+                        }
+                    }
                 } else {
                     self.handleTimeout()
                 }
@@ -199,6 +245,9 @@ final class QuizViewModel: ObservableObject {
 
         selectedAnswerIndex = index
 
+        // Haptic feedback on selection
+        HapticManager.impact(.light)
+
         // Stop timer on first selection only
         if answerPhase == .answering {
             stopTimer()
@@ -215,6 +264,7 @@ final class QuizViewModel: ObservableObject {
         guard answerPhase == .confidence else { return }
 
         selectedConfidence = level
+        HapticManager.selection()
         revealAnswer()
     }
 
@@ -234,9 +284,11 @@ final class QuizViewModel: ObservableObject {
             currentStreak += 1
             bestStreak = max(bestStreak, currentStreak)
             checkStreakToast()
+            HapticManager.notification(.success)
         } else {
             wrongCount += 1
             currentStreak = 0
+            HapticManager.notification(.error)
         }
 
         // Update confidence report
@@ -289,6 +341,7 @@ final class QuizViewModel: ObservableObject {
         // Record as wrong (timed out)
         wrongCount += 1
         currentStreak = 0
+        HapticManager.notification(.warning)
 
         let record = AnswerRecord(
             question: question,
@@ -317,6 +370,7 @@ final class QuizViewModel: ObservableObject {
 
         stopTimer()
         skipAvailable = false
+        HapticManager.impact(.medium)
 
         guard let question = currentQuestion else { return }
 
@@ -383,12 +437,16 @@ final class QuizViewModel: ObservableObject {
         switch currentStreak {
         case 3:
             streakToast = "3 in a row! 🔥"
+            HapticManager.impact(.heavy)
         case 5:
             streakToast = "5 in a row! On fire! 🔥🔥"
+            HapticManager.impact(.heavy)
         case 7:
             streakToast = "7 in a row! UNSTOPPABLE! 🔥🔥🔥"
+            HapticManager.impact(.heavy)
         case 10:
             streakToast = "PERFECT STREAK! 💎🔥"
+            HapticManager.impact(.rigid)
         default:
             if currentStreak > 2 {
                 streakToast = "\(currentStreak) streak! 🔥"
@@ -427,5 +485,6 @@ final class QuizViewModel: ObservableObject {
 
     deinit {
         timerCancellable?.cancel()
+        dangerHapticCancellable?.cancel()
     }
 }
