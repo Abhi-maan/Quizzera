@@ -1,10 +1,4 @@
-//
-//  HomeScreenView.swift
-//  Quizzera
-//
-//  Created on 2026-04-27.
-//  Home hub — stats, category picker, difficulty selector, XP badges, streak, sparkline, navigation.
-//
+
 
 import SwiftUI
 
